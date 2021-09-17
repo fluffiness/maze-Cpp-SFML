@@ -7,58 +7,139 @@
 #include <vector>
 #include <iostream>
 #include <map>
+#include <algorithm>
+#include <stack>
+#include <stdlib.h>
+
+// provide less than operator for std::map to work
+template<typename T>
+bool operator< (const sf::Vector2<T>& left, const sf::Vector2<T>& right) {
+    if (left.x < right.x) return true;
+    if (left.y < right.y) return true;
+    return false;
+}
+
 
 class Maze {
 private:
-    sf::RenderWindow m_Window;
-    sf::Vector2<int> m_GridSize;
-    int m_BlockSize;
-    int m_WallWidth;
-    int m_WindowHeight;
-    int m_WindowWidth;
-    sf::Vector2<int> m_Begin;
-    sf::Vector2<int> m_End;
-    std::map<sf::Vector2<int>, bool> m_Visited;
-    std::map <sf::Vector2<int>, std::vector<sf::Vector2<int>>> m_Adj;
-    std::vector<std::vector<sf::RectangleShape>> m_MazeGrid;
-    sf::RectangleShape m_Background;
+    sf::RenderWindow mWindow;
+    sf::Vector2<int> mGridSize;
+    int mBlockSize;
+    int mWallWidth;
+    int mWindowHeight;
+    int mWindowWidth;
+    sf::Vector2<int> mBegin;
+    sf::Vector2<int> mEnd;
+    std::map<sf::Vector2<int>, bool> mVisited;
+    std::map<sf::Vector2<int>, std::vector<sf::Vector2<int>>> mAdj;
+    std::vector<std::vector<sf::RectangleShape>> mMazeGrid;
+    std::vector<sf::RectangleShape> mFiller; // filles the gap between blocks that are connected
+    sf::RectangleShape mBackground;
+    std::stack<sf::Vector2<int>> mStack;
+    bool made = false;
+    bool longestfound = false;
+    bool solved = false;
+
+    const sf::Color BLOCKCOLOR = sf::Color(255, 255, 255);
+    const sf::Color WALLCOLOR = sf::Color(0, 0, 0);
+    const sf::Vector2<int> Directions[4] = { sf::Vector2<int>(1, 0), sf::Vector2<int>(0, 1), sf::Vector2<int>(-1, 0), sf::Vector2<int>(0, -1) };
 
     void Update() {};
     void Reset() {};
 
     void Initialize() {
-        m_Window.create(sf::VideoMode(m_WindowHeight, m_WindowWidth), "Maze"); // initialize window
+        mWindow.create(sf::VideoMode(mWindowHeight, mWindowWidth), "Maze"); // initialize window
 
-        m_Background.setSize(sf::Vector2f(m_WindowHeight, m_WindowWidth)); // set BG
-        m_Background.setFillColor(sf::Color::Blue); //set BG color
-        m_Background.setPosition(0.0, 0.0);
+        mBackground.setSize(sf::Vector2f(mWindowHeight, mWindowWidth)); // set BG
+        mBackground.setFillColor(WALLCOLOR); //set BG color
+        mBackground.setPosition(0.0, 0.0);
 
         // initialize maze grid
-        // construct new grid
+        // construct temp grid
         std::vector<std::vector<sf::RectangleShape>> grid(
-            m_GridSize.x, std::vector<sf::RectangleShape>(
-                m_GridSize.y, sf::RectangleShape(sf::Vector2f(m_BlockSize, m_BlockSize))
+            mGridSize.x, std::vector<sf::RectangleShape>(
+                mGridSize.y, sf::RectangleShape(sf::Vector2f(mBlockSize, mBlockSize))
                 )
         );
-        m_MazeGrid = grid; // assign
-        for (int i = 0; i < m_GridSize.x; i++) {
-            for (int j = 0; j < m_GridSize.y; j++) {
-                m_MazeGrid[i][j].setFillColor(sf::Color::White); // set coloe
-                m_MazeGrid[i][j].setPosition(i * (m_BlockSize + m_WallWidth), j * (m_BlockSize + m_WallWidth)); // set position
+        mMazeGrid = grid; // assign temp to mMazeGrid
+        for (int i = 0; i < mGridSize.x; i++) {
+            for (int j = 0; j < mGridSize.y; j++) {
+                mMazeGrid[i][j].setFillColor(BLOCKCOLOR); // set coloe
+                mMazeGrid[i][j].setPosition(i * (mBlockSize + mWallWidth) + mWallWidth, j * (mBlockSize + mWallWidth) + mWallWidth); // set position
             }
         }
+
+        // initialize mVisited
+        for (int i = 0; i < mGridSize.x;i++){
+            for (int j = 0; j < mGridSize.y; j++) {
+                mVisited[sf::Vector2<int>(i, j)] = false;
+            }
+        }
+
+        // initialize stack and visited
+        mStack.push(sf::Vector2<int>(0, 0));
+        mVisited[sf::Vector2<int>(0, 0)] = true;
+    }
+
+    sf::RectangleShape FillBetween(sf::Vector2<int> v, sf::Vector2<int> w) {
+        //returns a rectangle that fills the gap between v and w
+        int x = (v.x == w.x) ? v.x : std::min(v.x, w.x) + mBlockSize;
+        int y = (v.y == w.y) ? v.y : std::min(v.y, w.y) + mBlockSize;
+        int width = (v.x == w.x) ? mBlockSize : mWallWidth;
+        int height = (v.x == w.x) ? mWallWidth : mBlockSize;
+        sf::RectangleShape tempRec(sf::Vector2f(width, height));
+        tempRec.setFillColor(BLOCKCOLOR);
+        tempRec.setPosition(x, y);
+        return tempRec;
+    }
+
+    sf::Vector2<int> Rotate(const sf::Vector2<int> &dir) {
+        return sf::Vector2<int>((-1) * dir.y, dir.x);
+    }
+
+    bool CheckValid(sf::Vector2<int> pos) {
+        // checks if pos is unvisited and valid
+        if (!(pos.x > 0 && pos.y > 0 && pos.x < mGridSize.x && pos.y < mGridSize.y)) return false;
+        return !mVisited[pos];
+    }
+
+    void MakeUpdate() {
+        // mStack.top() is the current position
+
+        int r = std::rand() % 4; // choose a random initial direction
+        sf::Vector2<int> step;
+        bool foundValid = false;
+        sf::Vector2<int> next;
+        for (int i = 0; i < 4; i++) {// rotate anti-clockwise
+            step = Directions[(r + i) % 4];
+            foundValid = CheckValid(mStack.top() + step);
+            if (foundValid) {
+                next = mStack.top() + step;
+                break;
+            }
+        }
+
+        //
+    }
+
+    void FindLongest() {
+
+    }
+
+    void SolveUpdate() {
+
     }
 
 public:
     Maze()
-        :m_GridSize(sf::Vector2<int>(10, 8)), m_BlockSize(50), m_WallWidth(5), 
-        m_WindowHeight(m_GridSize.x* (m_BlockSize + m_WallWidth) - m_WallWidth), m_WindowWidth(m_GridSize.y* (m_BlockSize + m_WallWidth) - m_WallWidth)
+        :mGridSize(sf::Vector2<int>(10, 8)), mBlockSize(50), mWallWidth(5), 
+        mWindowHeight(mGridSize.x* (mBlockSize + mWallWidth) + mWallWidth), mWindowWidth(mGridSize.y* (mBlockSize + mWallWidth) + mWallWidth)
     {
     }
 
     Maze(sf::Vector2<int> gridSize, int blockSize, int wallWidth)
-        :m_GridSize(gridSize), m_BlockSize(blockSize), m_WallWidth(wallWidth),
-        m_WindowHeight(m_GridSize.x* (m_BlockSize + m_WallWidth) - m_WallWidth), m_WindowWidth(m_GridSize.y* (m_BlockSize + m_WallWidth) - m_WallWidth)
+        :mGridSize(gridSize), mBlockSize(blockSize), mWallWidth(wallWidth),
+        mWindowHeight(mGridSize.x* (mBlockSize + mWallWidth) + mWallWidth), mWindowWidth(mGridSize.y* (mBlockSize + mWallWidth) + mWallWidth)
     {
     }
 
@@ -66,44 +147,66 @@ public:
         Initialize();
 
         // first draw
-        m_Window.draw(m_Background);
-        for (std::vector<sf::RectangleShape> column : m_MazeGrid) {
+        mWindow.draw(mBackground);
+        for (std::vector<sf::RectangleShape> column : mMazeGrid) {
             for (sf::RectangleShape block : column) {
-                m_Window.draw(block);
+                mWindow.draw(block);
             }
         }
-
-        m_Window.display();
-
-        while (m_Window.isOpen())
+        mWindow.display();
+        
+        // mainloop
+        int counter = 0;
+        sf::Clock clock;
+        while (mWindow.isOpen())
         {
+            clock.restart();
             sf::Event event;
-            while (m_Window.pollEvent(event))
+            while (mWindow.pollEvent(event))
             {
                 if (event.type == sf::Event::Closed)
-                    m_Window.close();
+                    mWindow.close();
             }
 
+            
             // Draw everything
-            m_Window.clear();
+            mWindow.clear();
 
-            m_Window.draw(m_Background);
-            for (std::vector<sf::RectangleShape> column : m_MazeGrid) {
-                for (sf::RectangleShape block : column) {
-                    m_Window.draw(block);
+            if (counter == 0) {
+                mWindow.draw(mBackground);
+                for (std::vector<sf::RectangleShape> column : mMazeGrid) {
+                    for (sf::RectangleShape block : column) {
+                        mWindow.draw(block);
+                    }
                 }
             }
+            else {
+                mWindow.draw(mBackground);
+            }
             
-            m_Window.display();
+            
+            mWindow.display();
+            while (clock.getElapsedTime().asMilliseconds() < 1000.0);
+            counter = (counter + 1) % 2;
         }
     }
     ~Maze() {};
 };
 
+
+
 int main()
 {
-    std::vector<std::vector<sf::RectangleShape>> grid;
+    sf::Vector2<int> vec_a(4, 3);
+    sf::Vector2<int> vec_b(3, 4);
+    if(vec_a < vec_b){
+        std::cout << "less than" << std::endl;
+    }
+    else {
+        std::cout << "more than" << std::endl;
+    }
     Maze maze;
     maze.Start();
+    std::cin.get();
     return 0;
 }
