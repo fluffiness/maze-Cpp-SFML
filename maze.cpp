@@ -9,7 +9,6 @@
 #include <map>
 #include <algorithm>
 #include <stack>
-#include <stdlib.h>
 #include <time.h>
 #include <random>
 #include <queue>
@@ -49,7 +48,6 @@ private:
         SOLUTION
     };
     Stage mCurrentStage = Stage::INITIALIZATION;
-    int mBlockCounter = 0; // for counting blocks already in maze
     std::mt19937 mRNG;
     std::uniform_int_distribution<int> mUInt4{ 0, 3 };
 
@@ -86,7 +84,7 @@ private:
         // initialize mVisited
         for (int i = 0; i < mGridSize.x;i++){
             for (int j = 0; j < mGridSize.y; j++) {
-                mVisited[sf::Vector2<int>(0, 0)] = false;
+                mVisited[sf::Vector2<int>(i, j)] = false;
             }
         }
 
@@ -249,15 +247,20 @@ public:
 
             // Update shapes
             switch (mCurrentStage) {
-            case Stage::INITIALIZATION:
+            case Stage::INITIALIZATION: {
+                //choose random starting point
+                std::uniform_int_distribution<int> UIntX{ 0, mGridSize.x - 1 };
+                std::uniform_int_distribution<int> UIntY{ 0, mGridSize.y - 1 };
+                mBegin = sf::Vector2<int>(UIntX(mRNG), UIntY(mRNG));
+
                 // initialize stack and visited
-                mStack.push(sf::Vector2<int>(0, 0));
-                mVisited[sf::Vector2<int>(0, 0)] = true;
+                mStack.push(mBegin);
+                mVisited[mBegin] = true;
                 // change color of (0, 0)
-                mMazeGrid[0][0].setFillColor(PATHCOLOR);
-                mBlockCounter++;
+                mMazeGrid[mBegin.x][mBegin.y].setFillColor(PATHCOLOR);
                 mCurrentStage = Stage::GENERATION;
                 break;
+            }
             case Stage::GENERATION:
                 GenerateUpdate();
                 break;
@@ -326,7 +329,7 @@ public:
 
 int main()
 {
-    Maze maze;
+    Maze maze{ {30, 20}, 30, 3, 10 };
     maze.Start();
     std::cin.get();
     return 0;
