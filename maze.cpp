@@ -37,13 +37,15 @@ private:
     std::map<sf::Vector2<int>, bool> mVisited;
     std::map<sf::Vector2<int>, std::vector<sf::Vector2<int>>> mAdj; // adjacency list for later graph traversal
     std::vector<std::vector<sf::RectangleShape>> mMazeGrid; // grid of squares shown on window
-    std::vector<sf::RectangleShape> mFiller; // filles the gap between blocks that are connected
+    std::vector<sf::RectangleShape> mGenFiller; // fills the gaps between blocks that are connected during generation
+    std::vector<sf::RectangleShape> mSolFiller; // fills the gaps between blocks that are connected during solution
     sf::RectangleShape mBackground; // backgroud i.e. wall
-    std::stack<sf::Vector2<int>> mStack; // stack for maze generation
+    std::stack<sf::Vector2<int>> mStack; // stack for maze generation and DFS
     enum class Stage {
         INITIALIZATION,
         GENERATION, 
         FINDLONGEST,
+        FIRSTSTEP, 
         SOLUTION
     };
     Stage mCurrentStage = Stage::INITIALIZATION;
@@ -92,14 +94,14 @@ private:
         mRNG.seed(time(NULL));
     }
 
-    sf::RectangleShape FillBetween(sf::Vector2<int> v, sf::Vector2<int> w) {
+    sf::RectangleShape FillBetween(sf::Vector2<int> v, sf::Vector2<int> w, sf::Color c) {
         //returns a rectangle that fills the gap between v and w
         int x = (v.x == w.x) ? (v.x * (mWallWidth + mBlockSize) + mWallWidth) : (std::max(v.x, w.x) * (mWallWidth + mBlockSize));
         int y = (v.y == w.y) ? (v.y * (mWallWidth + mBlockSize) + mWallWidth) : (std::max(v.y, w.y) * (mWallWidth + mBlockSize));
         int width = (v.x == w.x) ? mBlockSize : mWallWidth;
         int height = (v.x == w.x) ? mWallWidth : mBlockSize;
         sf::RectangleShape tempRec(sf::Vector2f(width, height));
-        tempRec.setFillColor(PATHCOLOR);
+        tempRec.setFillColor(c);
         tempRec.setPosition(x, y);
         return tempRec;
     }
@@ -154,7 +156,7 @@ private:
         mAdj[next].push_back(mStack.top()); // connect new block with previous in mAdj
         mMazeGrid[next.x][next.y].setFillColor(PATHCOLOR); // change color of new block
         mVisited[next] = true; // set visited to true
-        mFiller.push_back(FillBetween(mStack.top(), next)); // fill gap
+        mGenFiller.push_back(FillBetween(mStack.top(), next, PATHCOLOR)); // fill gap
         mStack.push(next); // push new block position to stack
     }
 
@@ -201,11 +203,7 @@ private:
         mEnd = currentBlock;
         mMazeGrid[mEnd.x][mEnd.y].setFillColor(sf::Color(0, 255, 0));
 
-        mCurrentStage = Stage::SOLUTION;
-    }
-
-    void SolveUpdate() {
-
+        mCurrentStage = Stage::FIRSTSTEP;
     }
 
 public:
@@ -266,7 +264,34 @@ public:
             case Stage::FINDLONGEST:
                 FindLongest();
                 break;
+            case Stage::FIRSTSTEP:
+                // reset mVisited for DFS
+                for (std::map<sf::Vector2<int>, bool>::iterator it = mVisited.begin(); it != mVisited.end(); it++)
+                    it->second = false;
+                
+                // initialization for DFS
+                mStack.push(mBegin);
+                mVisited[mBegin] = true;
+                mCurrentStage = Stage::SOLUTION;
+                break;
             case Stage::SOLUTION:
+                // solve maze using DFS
+                if (mStack.top() != mEnd) {
+                    bool found = false;
+                    for (sf::Vector2<int> neighbor : mAdj[mStack.top()]) { //check for unvisited neighbors
+                        if (!mVisited[neighbor]) {
+                            found = true;
+                            mMazeGrid[neighbor.x][neighbor.y].setFillColor(sf::Color(255, 0, 0));
+                            mVisited[neighbor] = true;
+                            mSolFiller.push_back(FillBetween(mStack.top(), neighbor, sf::Color(255, 0, 0)));
+                            mStack.push(neighbor);
+                            break;
+                        }
+                    }
+                    if (!found) {
+                        mStack.pop();
+                    }
+                }
                 break;
             }
             
@@ -280,8 +305,13 @@ public:
                     mWindow.draw(block);
                 }
             }
-            // draw fillers
-            for (sf::RectangleShape filler : mFiller) {
+            // draw gen-fillers
+            for (sf::RectangleShape filler : mGenFiller) {
+                mWindow.draw(filler);
+            }
+
+            // drat sol-fillers
+            for (sf::RectangleShape filler : mSolFiller) {
                 mWindow.draw(filler);
             }
 
