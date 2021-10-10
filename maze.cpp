@@ -331,6 +331,5 @@ int main()
 {
     Maze maze{ {30, 20}, 30, 3, 10 };
     maze.Start();
-    std::cin.get();
     return 0;
 }
